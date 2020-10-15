@@ -15,7 +15,7 @@ import re
 import time
 import MySQLdb
 
-from twisted.internet import defer, threads
+from twisted.internet import threads
 
 from ZenPacks.zenoss.PythonCollector.datasources.PythonDataSource \
     import PythonDataSourcePlugin
@@ -29,27 +29,62 @@ from ZenPacks.zenoss.MySqlMonitor import NAME_SPLITTER
 
 
 def connection_cursor(ds, ip):
+    if not ds.zMySQLConnectionString:
+        raise Exception('MySQL Connection String not configured')
+
     servers = parse_mysql_connection_string(ds.zMySQLConnectionString)
-    server = servers[ds.component.split(NAME_SPLITTER)[0]]
+    server_id = ds.component.split(NAME_SPLITTER)[0]
+    server = servers.get(server_id)
+    if not server:
+        raise Exception(
+            'MySQL Connection String not configured for {}'.format(server_id)
+        )
+
     db = MySQLdb.connect(
         host=ip,
         user=server['user'],
         port=server['port'],
         passwd=server['passwd'],
-        connect_timeout=ds.zMySqlTimeout
+        connect_timeout=getattr(ds, 'zMySqlTimeout', 30)
     )
     db.ping(True)
     return db.cursor()
 
 
 class MysqlBasePlugin(PythonDataSourcePlugin):
-    '''Base plugin for MySQL monitoring tasks'''
+    """
+    Base plugin for MySQL monitoring tasks.
+    """
 
     proxy_attributes = (
         'zMySQLConnectionString',
         'zMySqlTimeout',
         'table_count'
     )
+
+    def __init__(self):
+        # Form keyName from the class name without the trailing "Plugin"
+        # self.keyName is used in eventKey and eventClassKey
+        self.keyName = re.sub('Plugin$', '', self.__class__.__name__)
+
+    # base_event is designed to facilitate event creation across classes.
+    def base_event(self,
+                   severity,
+                   summary,
+                   component=None,
+                   eventKey=None,
+                   eventClassKey=None):
+
+        if not eventKey: eventKey = self.keyName
+        if not eventClassKey: eventClassKey = self.keyName
+
+        return {
+            'severity': severity,
+            'summary': summary,
+            'component': component,
+            'eventKey': eventKey,
+            'eventClassKey': eventClassKey,
+        }
 
     def get_query(self, component):
         raise NotImplemented
@@ -90,17 +125,12 @@ class MysqlBasePlugin(PythonDataSourcePlugin):
                     continue
                 message = str(e)
 
-                if 'MySQL server has gone away' in message or\
-                    "Can't connect to MySQL server" in message:
+                if ('MySQL server has gone away' in message or
+                        "Can't connect to MySQL server" in message):
                     message = "Can't connect to MySQL server or timeout error."
 
-                data['events'].append({
-                    'component': ds.component,
-                    'summary': message,
-                    'eventClass': '/Status',
-                    'eventKey': 'mysql_result',
-                    'severity': ds.severity,
-                })
+                event = self.base_event(ds.severity, message, ds.component)
+                data['events'].append(event)
 
         return data
 
@@ -108,27 +138,21 @@ class MysqlBasePlugin(PythonDataSourcePlugin):
         return threads.deferToThread(lambda: self.inner(config))
 
     def onSuccess(self, result, config):
-        for component in result["values"].keys():
+        for ds in config.datasources:
             # Clear events for success components.
-            result['events'].insert(0, {
-                'component': component,
-                'summary': 'Monitoring ok',
-                'eventClass': '/Status',
-                'eventKey': 'mysql_result',
-                'severity': ZenEventClasses.Clear,
-            })
+            event = self.base_event(ZenEventClasses.Clear,
+                                    'Monitoring ok',
+                                    ds.component)
+            result['events'].insert(0, event)
         return result
 
     def onError(self, result, config):
         log.error(result)
         ds0 = config.datasources[0]
         data = self.new_data()
-        data['events'].append({
-            'summary': 'error: %s' % result,
-            'eventClass': '/Status',
-            'eventKey': 'mysql_result',
-            'severity': ds0.severity,
-        })
+        summary = 'error: {}'.format(result)
+        event = self.base_event(ds0.severity, summary)
+        data['events'].append(event)
         return data
 
 
@@ -141,7 +165,6 @@ class MySqlMonitorPlugin(MysqlBasePlugin):
 
 
 class MySqlDeadlockPlugin(MysqlBasePlugin):
-
     proxy_attributes = MysqlBasePlugin.proxy_attributes + ('deadlock_info',)
 
     deadlock_time = None
@@ -154,13 +177,8 @@ class MySqlDeadlockPlugin(MysqlBasePlugin):
     )
 
     def _event(self, severity, summary, component):
-        return {
-            'severity': severity,
-            'eventKey': 'innodb_deadlock',
-            'eventClass': '/Status',
-            'summary': summary,
-            'component': component,
-        }
+        event_key = self.keyName + '_innodb'
+        return self.base_event(severity, summary, component, eventKey=event_key)
 
     def get_query(self, component):
         return 'show engine innodb status'
@@ -237,13 +255,8 @@ class MySqlReplicationPlugin(MysqlBasePlugin):
         return 'show slave status'
 
     def _event(self, severity, summary, component, suffix):
-        return {
-            'severity': severity,
-            'eventKey': 'replication_status_' + suffix,
-            'eventClass': '/Status',
-            'summary': summary,
-            'component': component,
-        }
+        eventKey = self.keyName + '_' + suffix
+        return self.base_event(severity, summary, component, eventKey=eventKey)
 
     def query_results_to_events(self, results, ds):
         if not results:
@@ -256,7 +269,7 @@ class MySqlReplicationPlugin(MysqlBasePlugin):
         slave_sql = results[0][11]
         # Last_Errno: 0
         # Last_Error:
-        last_err_no = results[0][18]
+        # last_err_no = results[0][18]
         last_err_str = results[0][19]
 
         # For MySQL 5.0:
@@ -362,13 +375,13 @@ class MySQLMonitorDatabasesPlugin(MysqlBasePlugin):
 
         grammar = 'table was' if abs(diff) == 1 else 'tables were'
         key, severity = ('added', 2) if diff > 0 else ('dropped', 3)
-        return [{
-            'severity': severity,
-            'eventKey': 'table_count%s' % str(time.time()),
-            'eventClass': '/Status',
-            'summary': '{0} {1} {2}.'.format(abs(diff), grammar, key),
-            'component': ds.component.split(NAME_SPLITTER)[-1],
-        }]
+        summary = '{0} {1} {2}.'.format(abs(diff), grammar, key)
+
+        eventKey = 'table_count{}'.format(str(time.time()))
+        component = ds.component.split(NAME_SPLITTER)[-1]
+        event = self.base_event(severity, summary, component, eventKey=eventKey)
+
+        return[event]
 
 
 class MySQLDatabaseExistencePlugin(MysqlBasePlugin):
@@ -384,13 +397,15 @@ class MySQLDatabaseExistencePlugin(MysqlBasePlugin):
         if not results[0][0]:
             # Database does not exist, will be deleted
             db_name = ds.component.split(NAME_SPLITTER)[-1]
-            return [{
-                'severity': ZenEventClasses.Info,
-                'eventKey': 'db_%s_dropped' % db_name,
-                'eventClass': '/Status',
-                'summary': 'Database "%s" was dropped.' % db_name,
-                'component': ds.component.split(NAME_SPLITTER)[0],
-            }]
+            summary = 'Database "{}" was dropped.'.format(db_name)
+            eventKey = self.keyName + '_{}_dropped'.format(db_name)
+            component = ds.component.split(NAME_SPLITTER)[0]
+            event = self.base_event(ZenEventClasses.Info,
+                                    summary,
+                                    component=component,
+                                    eventKey=eventKey)
+
+            return [event]
         return []
 
     def query_results_to_maps(self, results, component):

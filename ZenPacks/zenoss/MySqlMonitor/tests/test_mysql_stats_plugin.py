@@ -31,7 +31,7 @@ class TestZenossMySqlStatsPlugin(BaseTestCase):
             sentinel.gstatus
         )
 
-    @patch.object(check_mysql_stats, 'MySQLdb')
+    @patch.object(check_mysql_stats, 'pymysql')
     def test_run(self, mysqldb):
         MYSQL_STATS = (
             ('Aborted_clients', '1'),
@@ -65,7 +65,7 @@ class TestZenossMySqlStatsPlugin(BaseTestCase):
             'STATUS OK|Aborted_clients=1 Aborted_connects=2'
         )
 
-    @patch.object(check_mysql_stats, 'MySQLdb')
+    @patch.object(check_mysql_stats, 'pymysql')
     def test_error_statistics_run(self, mysqldb):
         MYSQL_STATS = ()
         connect = Mock()

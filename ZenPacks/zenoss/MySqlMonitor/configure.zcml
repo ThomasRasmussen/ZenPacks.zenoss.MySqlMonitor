@@ -24,20 +24,24 @@
         provides=".datasources.MySqlMonitorDataSource.IMySqlMonitorDataSourceInfo"
         />
 
-    <!-- Impact -->
-    <configure zcml:condition="installed ZenPacks.zenoss.Impact">
-        <include package="ZenPacks.zenoss.Impact" file="meta.zcml"/>
-
+    <!-- DynamicView -->
+    <configure zcml:condition="installed ZenPacks.zenoss.DynamicView">
         <subscriber
-            provides="ZenPacks.zenoss.Impact.impactd.interfaces.IRelationshipDataProvider"
-            for=".MySQLServer.MySQLServer"
-            factory=".impact.MySQLServerRelationsProvider"
+            provides="ZenPacks.zenoss.DynamicView.interfaces.IRelationsProvider"
+            for="Products.ZenModel.Device.Device"
+            factory=".dynamicview.DeviceRelationsProvider"
             />
 
         <subscriber
-            provides="ZenPacks.zenoss.Impact.impactd.interfaces.IRelationshipDataProvider"
-            for=".MySQLDatabase.MySQLDatabase"
-            factory=".impact.MySQLDatabaseRelationsProvider"
+            provides="ZenPacks.zenoss.DynamicView.interfaces.IRelationsProvider"
+            for="ZenPacks.zenoss.MySqlMonitor.MySQLServer.MySQLServer"
+            factory=".dynamicview.MySQLServerRelationsProvider"
+            />
+
+        <subscriber
+            provides="ZenPacks.zenoss.DynamicView.interfaces.IRelationsProvider"
+            for="ZenPacks.zenoss.MySqlMonitor.MySQLDatabase.MySQLDatabase"
+            factory=".dynamicview.MySQLDatabaseRelationsProvider"
             />
 
     </configure>

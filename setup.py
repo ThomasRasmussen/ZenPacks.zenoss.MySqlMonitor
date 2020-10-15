@@ -2,7 +2,7 @@
 # or saved.  Do not modify them directly here.
 # NB: PACKAGES is deprecated
 NAME = "ZenPacks.zenoss.MySqlMonitor"
-VERSION = "3.1.0dev"
+VERSION = "3.2.0"
 AUTHOR = "Zenoss"
 LICENSE = "GPLv2"
 NAMESPACE_PACKAGES = ['ZenPacks', 'ZenPacks.zenoss']
@@ -24,10 +24,6 @@ setup(
     version=VERSION,
     author=AUTHOR,
     license=LICENSE,
-    description='MySQL Database Monitor (Core) ZenPack',
-    long_description=(open(
-        dirname(__file__) + 'README.md').read().split('\n'))[0],
-    url='http://wiki.zenoss.org/ZenPack:MySQL_Database_Monitor_%28Core%29',
 
     # This is the version spec which indicates what versions of Zenoss
     # this ZenPack is compatible with

@@ -6,6 +6,9 @@
 # License.zenoss under the directory where your Zenoss product is installed.
 #
 ##############################################################################
+
+import Globals
+
 import logging
 from .data import modeling_data
 from mock import MagicMock, patch

@@ -184,7 +184,8 @@ class MySQLCollector(PythonPlugin):
                 "remote connections for %s:***:%s" % (user, port))
             severity = 5
         else:
-            msg = "Error modeling MySQL server for %s:***:%s" % (user, port)
+            msg = ("Error modeling MySQL server for %s:***:%s; "
+                "MySQL Error: %s" % (user, port, error))
             severity = 5
 
         return msg, severity
